@@ -1,0 +1,5 @@
+github.com/google/go-cmp v0.5.9 h1:O2Tfq5qg4qc4AmwVlvv0oLiVAGB7enBSJ2x2DqQFi38=
+github.com/libsql/go-libsql v0.0.0-20230829151150-d30caadc3a7c h1:aB0+FLI1c+u7RLH8onyQ7l2Ie3WkGwsqn31QOygie3g=
+github.com/libsql/go-libsql v0.0.0-20230829151150-d30caadc3a7c/go.mod h1:MnEG8k0pwr7Y+sLumkzeSpmjuCmi3zRPGc7VlQ05vlg=
+github.com/pkg/errors v0.9.1 h1:FEBLx1zS214owpjy7qsBeixbURkuhQAwrK5UwLGTwt4=
+gotest.tools v2.2.0+incompatible h1:VsBPFP1AI068pPrMxtb/S8Zkgf9xEmTLJjfM+P5UIEo=
