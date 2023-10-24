@@ -33,7 +33,7 @@ Here's an example of obtaining a `sql.DB` object from `database/sql` package:
 ```
 dbPath := // Path do db file on local disk
 primaryUrl := // URL to primary database instance
-connector := NewEmbeddedReplicaConnector(dbPath, primaryUrl)
+connector := NewEmbeddedReplicaConnector(dbPath, primaryUrl, authToken)
 db := sql.OpenDB(connector)
 defer db.Close()
 ```
