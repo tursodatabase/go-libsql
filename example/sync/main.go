@@ -13,13 +13,14 @@ func run() (err error) {
 	if primaryUrl == "" {
 		return fmt.Errorf("TURSO_URL environment variable not set")
 	}
+	authToken := os.Getenv("TURSO_AUTH_TOKEN")
 	dir, err := os.MkdirTemp("", "libsql-*")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(dir)
 
-	connector, err := libsql.NewEmbeddedReplicaConnector(dir+"/test.db", primaryUrl)
+	connector, err := libsql.NewEmbeddedReplicaConnector(dir+"/test.db", primaryUrl, authToken)
 	if err != nil {
 		return err
 	}
