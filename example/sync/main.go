@@ -47,7 +47,8 @@ func run() (err error) {
 		fmt.Println("What would you like to do?")
 		fmt.Println("1. Sync with primary")
 		fmt.Println("2. Select from test table")
-		fmt.Println("3. Exit")
+		fmt.Println("3. Insert row to test table")
+		fmt.Println("4. Exit")
 		var choice int
 		_, err := fmt.Scanln(&choice)
 		if err != nil {
@@ -99,6 +100,11 @@ func run() (err error) {
 				return err
 			}
 		case 3:
+			_, err := db.Exec("INSERT INTO test (id, name) VALUES (random(), lower(hex(randomblob(16))))")
+			if err != nil {
+				return err
+			}
+		case 4:
 			return nil
 		}
 	}
