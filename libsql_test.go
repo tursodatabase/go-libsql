@@ -49,13 +49,40 @@ func getRemoteDb(t T) *Database {
 		db.Close()
 		cancel()
 	})
-	return &Database{db, t, ctx}
+	return &Database{db, nil, t, ctx}
+}
+
+func getEmbeddedDb(t T) *Database {
+	primaryUrl := os.Getenv("LIBSQL_PRIMARY_URL")
+	if primaryUrl == "" {
+		t.Skip("LIBSQL_PRIMARY_URL is not set")
+		return nil
+	}
+	authToken := os.Getenv("LIBSQL_AUTH_TOKEN")
+	dir, err := os.MkdirTemp("", "libsql-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dbPath := dir + "/test.db"
+
+	connector, err := NewEmbeddedReplicaConnector(dbPath, primaryUrl, authToken)
+	t.FatalOnError(err)
+	db := sql.OpenDB(connector)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	t.Cleanup(func() {
+		db.Close()
+		connector.Close()
+		cancel()
+		defer os.RemoveAll(dir)
+	})
+	return &Database{db, connector, t, ctx}
 }
 
 type Database struct {
 	*sql.DB
-	t   T
-	ctx context.Context
+	connector *Connector
+	t         T
+	ctx       context.Context
 }
 
 func (db Database) exec(sql string, args ...any) sql.Result {
@@ -68,6 +95,12 @@ func (db Database) query(sql string, args ...any) *sql.Rows {
 	rows, err := db.QueryContext(db.ctx, sql, args...)
 	db.t.FatalOnError(err)
 	return rows
+}
+
+func (db Database) sync() {
+	if db.connector != nil {
+		db.connector.Sync()
+	}
 }
 
 type Table struct {
@@ -137,7 +170,7 @@ func (t Table) assertCount(expectedCount int, queryFn func() *sql.Rows) {
 	rows := queryFn()
 	defer rows.Close()
 	if !rows.Next() {
-		t.db.t.FatalWithMsg("expected at least one row")
+		t.db.t.FatalWithMsg(fmt.Sprintf("expected at least one row: %v", rows.Err()))
 	}
 	var rowCount int
 	t.db.t.FatalOnError(rows.Scan(&rowCount))
@@ -449,12 +482,23 @@ func TestSync(t *testing.T) {
 func TestExecAndQuery(t *testing.T) {
 	t.Parallel()
 	db := getRemoteDb(T{t})
+	testExecAndQuery(db)
+}
+
+func TestExecAndQueryEmbedded(t *testing.T) {
+	t.Parallel()
+	db := getEmbeddedDb(T{t})
+	testExecAndQuery(db)
+}
+
+func testExecAndQuery(db *Database) {
 	if db == nil {
 		return
 	}
 	table := db.createTable()
 	table.insertRows(0, 10)
 	table.insertRowsWithArgs(10, 10)
+	db.sync()
 	table.assertRowsCount(20)
 	table.assertRowDoesNotExist(20)
 	table.assertRowExists(0)
@@ -464,6 +508,16 @@ func TestExecAndQuery(t *testing.T) {
 func TestPreparedStatements(t *testing.T) {
 	t.Parallel()
 	db := getRemoteDb(T{t})
+	testPreparedStatements(db)
+}
+
+func TestPreparedStatementsEmbedded(t *testing.T) {
+	t.Parallel()
+	db := getEmbeddedDb(T{t})
+	testPreparedStatements(db)
+}
+
+func testPreparedStatements(db *Database) {
 	if db == nil {
 		return
 	}
@@ -471,6 +525,7 @@ func TestPreparedStatements(t *testing.T) {
 	stmt := table.prepareInsertStmt()
 	stmt.exec(1, "1")
 	db.t.FatalOnError(stmt.Close())
+	db.sync()
 	table.assertRowsCount(1)
 	table.assertRowExists(1)
 }
@@ -478,6 +533,16 @@ func TestPreparedStatements(t *testing.T) {
 func TestTransaction(t *testing.T) {
 	t.Parallel()
 	db := getRemoteDb(T{t})
+	testTransaction(db)
+}
+
+func TestTransactionEmbedded(t *testing.T) {
+	t.Parallel()
+	db := getEmbeddedDb(T{t})
+	testTransaction(db)
+}
+
+func testTransaction(db *Database) {
 	if db == nil {
 		return
 	}
@@ -490,6 +555,7 @@ func TestTransaction(t *testing.T) {
 	tx.assertRowExists(0)
 	tx.assertRowExists(19)
 	db.t.FatalOnError(tx.Commit())
+	db.sync()
 	table.assertRowsCount(20)
 	table.assertRowDoesNotExist(20)
 	table.assertRowExists(0)
@@ -515,6 +581,16 @@ func TestMultiLineStatement(t *testing.T) {
 func TestPreparedStatementInTransaction(t *testing.T) {
 	t.Parallel()
 	db := getRemoteDb(T{t})
+	testPreparedStatementInTransaction(db)
+}
+
+func TestPreparedStatementInTransactionEmbedded(t *testing.T) {
+	t.Parallel()
+	db := getEmbeddedDb(T{t})
+	testPreparedStatementInTransaction(db)
+}
+
+func testPreparedStatementInTransaction(db *Database) {
 	if db == nil {
 		return
 	}
@@ -526,6 +602,7 @@ func TestPreparedStatementInTransaction(t *testing.T) {
 	tx.assertRowsCount(1)
 	tx.assertRowExists(1)
 	db.t.FatalOnError(tx.Commit())
+	db.sync()
 	table.assertRowsCount(1)
 	table.assertRowExists(1)
 }
@@ -533,6 +610,16 @@ func TestPreparedStatementInTransaction(t *testing.T) {
 func TestPreparedStatementInTransactionRollback(t *testing.T) {
 	t.Parallel()
 	db := getRemoteDb(T{t})
+	testPreparedStatementInTransactionRollback(db)
+}
+
+func TestPreparedStatementInTransactionRollbackEmbedded(t *testing.T) {
+	t.Parallel()
+	db := getEmbeddedDb(T{t})
+	testPreparedStatementInTransactionRollback(db)
+}
+
+func testPreparedStatementInTransactionRollback(db *Database) {
 	if db == nil {
 		return
 	}
@@ -544,6 +631,7 @@ func TestPreparedStatementInTransactionRollback(t *testing.T) {
 	tx.assertRowsCount(1)
 	tx.assertRowExists(1)
 	db.t.FatalOnError(tx.Rollback())
+	db.sync()
 	table.assertRowsCount(0)
 	table.assertRowDoesNotExist(1)
 }
@@ -551,6 +639,16 @@ func TestPreparedStatementInTransactionRollback(t *testing.T) {
 func TestCancelContext(t *testing.T) {
 	t.Parallel()
 	db := getRemoteDb(T{t})
+	testCancelContext(db)
+}
+
+func TestCancelContextEmbedded(t *testing.T) {
+	t.Parallel()
+	db := getEmbeddedDb(T{t})
+	testCancelContext(db)
+}
+
+func testCancelContext(db *Database) {
 	if db == nil {
 		return
 	}
@@ -568,6 +666,16 @@ func TestCancelContext(t *testing.T) {
 func TestCancelContextWithTransaction(t *testing.T) {
 	t.Parallel()
 	db := getRemoteDb(T{t})
+	testCancelContextWithTransaction(db)
+}
+
+func TestCancelContextWithTransactionEmbedded(t *testing.T) {
+	t.Parallel()
+	db := getEmbeddedDb(T{t})
+	testCancelContextWithTransaction(db)
+}
+
+func testCancelContextWithTransaction(db *Database) {
 	if db == nil {
 		return
 	}
@@ -596,6 +704,16 @@ func TestCancelContextWithTransaction(t *testing.T) {
 func TestTransactionRollback(t *testing.T) {
 	t.Parallel()
 	db := getRemoteDb(T{t})
+	testTransactionRollback(db)
+}
+
+func TestTransactionRollbackEmbedded(t *testing.T) {
+	t.Parallel()
+	db := getEmbeddedDb(T{t})
+	testTransactionRollback(db)
+}
+
+func testTransactionRollback(db *Database) {
 	if db == nil {
 		return
 	}
@@ -608,15 +726,27 @@ func TestTransactionRollback(t *testing.T) {
 	tx.assertRowExists(0)
 	tx.assertRowExists(19)
 	db.t.FatalOnError(tx.Rollback())
+	db.sync()
 	table.assertRowsCount(0)
 }
 
-func TestRemoteArguments(t *testing.T) {
+func TestArguments(t *testing.T) {
 	t.Parallel()
 	db := getRemoteDb(T{t})
+	testArguments(db)
+}
+
+func TestArgumentsEmbedded(t *testing.T) {
+	t.Parallel()
+	db := getEmbeddedDb(T{t})
+	testArguments(db)
+}
+
+func testArguments(db *Database) {
 	if db == nil {
 		return
 	}
+	t := db.t
 	tableName := fmt.Sprintf("test_%d", time.Now().UnixNano())
 	_, err := db.Exec(fmt.Sprintf("CREATE TABLE %s (id INTEGER, name TEXT, gpa REAL, cv BLOB);", tableName))
 	if err != nil {
@@ -626,6 +756,7 @@ func TestRemoteArguments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	db.sync()
 	rows, err := db.QueryContext(context.Background(), "SELECT NULL, id, name, gpa, cv FROM "+tableName)
 	if err != nil {
 		t.Fatal(err)
@@ -669,11 +800,23 @@ func TestRemoteArguments(t *testing.T) {
 func TestPing(t *testing.T) {
 	t.Parallel()
 	db := getRemoteDb(T{t})
+	testPing(db)
+}
 
+func TestPingEmbedded(t *testing.T) {
+	t.Parallel()
+	db := getEmbeddedDb(T{t})
+	testPing(db)
+}
+
+func testPing(db *Database) {
+	if db == nil {
+		return
+	}
 	// This ping should succeed because the database is up and running
 	db.t.FatalOnError(db.Ping())
 
-	t.Cleanup(func() {
+	db.t.Cleanup(func() {
 		db.Close()
 
 		// This ping should return an error because the database is already closed
@@ -687,6 +830,19 @@ func TestPing(t *testing.T) {
 func TestDataTypes(t *testing.T) {
 	t.Parallel()
 	db := getRemoteDb(T{t})
+	testDataTypes(db)
+}
+
+func TestDataTypesEmbedded(t *testing.T) {
+	t.Parallel()
+	db := getEmbeddedDb(T{t})
+	testDataTypes(db)
+}
+
+func testDataTypes(db *Database) {
+	if db == nil {
+		return
+	}
 	var (
 		text        string
 		nullText    sql.NullString
@@ -698,6 +854,7 @@ func TestDataTypes(t *testing.T) {
 		bytea       []byte
 		Time        time.Time
 	)
+	t := db.t
 	db.t.FatalOnError(db.QueryRowContext(db.ctx, "SELECT 'foobar' as text, NULL as text,  NULL as integer, 42 as integer, 1 as boolean, X'000102' as bytea, 3.14 as float8, NULL as float8, '0001-01-01 01:00:00+00:00' as time;").Scan(&text, &nullText, &nullInteger, &integer, &boolean, &bytea, &float8, &nullFloat, &Time))
 	switch {
 	case text != "foobar":
@@ -726,6 +883,19 @@ func TestDataTypes(t *testing.T) {
 func TestConcurrentOnSingleConnection(t *testing.T) {
 	t.Parallel()
 	db := getRemoteDb(T{t})
+	testConcurrentOnSingleConnection(db)
+}
+
+func TestConcurrentOnSingleConnectionEmbedded(t *testing.T) {
+	t.Parallel()
+	db := getEmbeddedDb(T{t})
+	testConcurrentOnSingleConnection(db)
+}
+
+func testConcurrentOnSingleConnection(db *Database) {
+	if db == nil {
+		return
+	}
 	t1 := db.createTable()
 	t2 := db.createTable()
 	t3 := db.createTable()
@@ -738,6 +908,7 @@ func TestConcurrentOnSingleConnection(t *testing.T) {
 	t3.insertRowsInternal(1, 10, func(i int) sql.Result {
 		return t3.db.exec("INSERT INTO "+t3.name+" VALUES(?, ?)", i, 0)
 	})
+	db.sync()
 	g, ctx := errgroup.WithContext(context.Background())
 	conn, err := db.Conn(context.Background())
 	db.t.FatalOnError(err)
