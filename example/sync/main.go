@@ -3,7 +3,7 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"github.com/libsql/go-libsql"
+	"github.com/tursodatabase/go-libsql"
 	"os"
 	"strings"
 )

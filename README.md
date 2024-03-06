@@ -1,6 +1,6 @@
 # LibSQL package for Go
 
-[libSQL](https://github.com/libsql/libsql) is an open source, open contribution fork of SQLite.
+[libSQL](https://github.com/tursodatabase/libsql) is an open source, open contribution fork of SQLite.
 This source repository contains libSQL API bindings for Go.
 
 ## Notice
@@ -17,7 +17,7 @@ We're working on adding support for more platforms.
 ## Installing
 
 ```
-go get github.com/libsql/go-libsql
+go get github.com/tursodatabase/go-libsql
 ```
 
 `go-libsql` uses `CGO` to make calls to LibSQL. You must build your binaries with `CGO_ENABLED=1`.
@@ -60,5 +60,5 @@ Unless you explicitly state otherwise, any contribution intentionally submitted
 for inclusion in libSQL by you, shall be licensed as MIT, without any additional
 terms or conditions.
 
-[MIT license]: https://github.com/libsql/go-libsql/blob/main/LICENSE
-[example directory]: https://github.com/libsql/go-libsql/tree/main/example
+[MIT license]: https://github.com/tursodatabase/go-libsql/blob/main/LICENSE
+[example directory]: https://github.com/tursodatabase/go-libsql/tree/main/example
