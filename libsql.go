@@ -24,15 +24,16 @@ import (
 	sqldriver "database/sql/driver"
 	"errors"
 	"fmt"
-	"github.com/antlr/antlr4/runtime/Go/antlr/v4"
-	"github.com/libsql/sqlite-antlr4-parser/sqliteparser"
-	"github.com/libsql/sqlite-antlr4-parser/sqliteparserutils"
 	"io"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
 	"unsafe"
+
+	"github.com/antlr/antlr4/runtime/Go/antlr/v4"
+	"github.com/libsql/sqlite-antlr4-parser/sqliteparser"
+	"github.com/libsql/sqlite-antlr4-parser/sqliteparserutils"
 )
 
 func init() {
@@ -222,9 +223,6 @@ func openEmbeddedReplicaConnector(dbPath, primaryUrl, authToken string, readYour
 				}
 			}
 		}()
-	}
-	if err != nil {
-		return nil, err
 	}
 	return &Connector{nativeDbPtr: nativeDbPtr, closeCh: closeCh, closeAckCh: closeAckCh}, nil
 }
@@ -683,6 +681,8 @@ func (r *rows) Next(dest []sqldriver.Value) error {
 	if count > len(r.columnNames) {
 		count = len(r.columnNames)
 	}
+
+Outerloop:
 	for i := 0; i < count; i++ {
 		var columnType C.int
 		var errMsg *C.char
@@ -741,7 +741,7 @@ func (r *rows) Next(dest []sqldriver.Value) error {
 			} {
 				if t, err := time.ParseInLocation(format, str, time.UTC); err == nil {
 					dest[i] = t
-					return nil
+					continue Outerloop
 				}
 			}
 			dest[i] = str
