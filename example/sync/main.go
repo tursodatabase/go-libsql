@@ -3,9 +3,10 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"github.com/tursodatabase/go-libsql"
 	"os"
 	"strings"
+
+	"github.com/tursodatabase/go-libsql"
 )
 
 func run() (err error) {
@@ -20,7 +21,7 @@ func run() (err error) {
 	}
 	defer os.RemoveAll(dir)
 
-	connector, err := libsql.NewEmbeddedReplicaConnector(dir+"/test.db", primaryUrl, authToken)
+	connector, err := libsql.NewEmbeddedReplicaConnector(dir+"/test.db", primaryUrl, libsql.WithAuthToken(authToken))
 	if err != nil {
 		return err
 	}
