@@ -526,6 +526,10 @@ func (c *conn) execute(query string, args []sqldriver.NamedValue, exec bool) (C.
 				valueInt = 0
 			}
 			statusCode = C.libsql_bind_int(stmt, C.int(idx), C.longlong(valueInt), &errMsg)
+		case time.Time:
+			valueStr := C.CString(arg.Value.(time.Time).Format(time.RFC3339Nano))
+			statusCode = C.libsql_bind_string(stmt, C.int(idx), valueStr, &errMsg)
+			C.free(unsafe.Pointer(valueStr))
 		default:
 			return nil, fmt.Errorf("unsupported type %T", arg.Value)
 		}
