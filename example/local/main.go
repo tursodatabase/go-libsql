@@ -13,7 +13,7 @@ func run() (err error) {
 		return err
 	}
 	defer os.RemoveAll(dir)
-	db, err := sql.Open("libsql", dir+"/test.db")
+	db, err := sql.Open("libsql", "file:"+dir+"/test.db")
 	if err != nil {
 		return err
 	}
