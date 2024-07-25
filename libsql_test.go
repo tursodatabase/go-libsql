@@ -1182,7 +1182,7 @@ func TestErrorCanNotConnect(t *testing.T) {
 		}()
 		t.Fatal("expected error")
 	}
-	if err.Error() != "failed to connect to database\nerror code = 1: Unable to connect: Failed to connect to database: `Unable to open connection to local database file:/root/test.db`" {
+	if err.Error() != "failed to connect to database\nerror code = 1: Unable to connect: Failed to connect to database: `Unable to open connection to local database file:/root/test.db: 14`" {
 		t.Fatal("unexpected error:", err)
 	}
 }
