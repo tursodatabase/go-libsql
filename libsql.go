@@ -24,6 +24,7 @@ import (
 	sqldriver "database/sql/driver"
 	"errors"
 	"fmt"
+	"github.com/antlr4-go/antlr/v4"
 	"io"
 	"net/url"
 	"regexp"
@@ -31,7 +32,6 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/antlr4-go/antlr/v4"
 	"github.com/libsql/sqlite-antlr4-parser/sqliteparser"
 	"github.com/libsql/sqlite-antlr4-parser/sqliteparserutils"
 )
@@ -320,9 +320,22 @@ func libsqlOpenWithSync(dbPath, primaryUrl, authToken string, readYourWrites boo
 		defer C.free(unsafe.Pointer(encrytionKeyNativeString))
 	}
 
+	var syncIntervalNative C.int = 0
+	var withWebpkiNative C.char = 0
+
+	config := C.libsql_config{
+		db_path:          dbPathNativeString,
+		primary_url:      primaryUrlNativeString,
+		auth_token:       authTokenNativeString,
+		read_your_writes: readYourWritesNative,
+		encryption_key:   encrytionKeyNativeString,
+		sync_interval:    syncIntervalNative,
+		with_webpki:      withWebpkiNative,
+	}
+
 	var db C.libsql_database_t
 	var errMsg *C.char
-	statusCode := C.libsql_open_sync(dbPathNativeString, primaryUrlNativeString, authTokenNativeString, readYourWritesNative, encrytionKeyNativeString, &db, &errMsg)
+	statusCode := C.libsql_open_sync_with_config(config, &db, &errMsg)
 	if statusCode != 0 {
 		return nil, libsqlError(fmt.Sprintf("failed to open database %s %s", dbPath, primaryUrl), statusCode, errMsg)
 	}
