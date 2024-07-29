@@ -24,6 +24,7 @@ import (
 	sqldriver "database/sql/driver"
 	"errors"
 	"fmt"
+	"golang.org/x/exp/slices"
 	"io"
 	"net/url"
 	"regexp"
@@ -40,11 +41,17 @@ func init() {
 	sql.Register("libsql", driver{})
 }
 
+type extension struct {
+	path       string
+	entryPoint string
+}
+
 type config struct {
 	authToken      *string
 	readYourWrites *bool
 	encryptionKey  *string
 	syncInterval   *time.Duration
+	extensions     []extension
 }
 
 type Option interface {
@@ -103,6 +110,16 @@ func WithSyncInterval(interval time.Duration) Option {
 	})
 }
 
+func WithExtension(path, entryPoint string) Option {
+	return option(func(o *config) error {
+		if slices.ContainsFunc(o.extensions, func(e extension) bool { return e.path == path }) {
+			return fmt.Errorf("extension %s already added", path)
+		}
+		o.extensions = append(o.extensions, extension{path, entryPoint})
+		return nil
+	})
+}
+
 func NewEmbeddedReplicaConnector(dbPath string, primaryUrl string, opts ...Option) (*Connector, error) {
 	var config config
 	errs := make([]error, 0, len(opts))
@@ -130,7 +147,7 @@ func NewEmbeddedReplicaConnector(dbPath string, primaryUrl string, opts ...Optio
 	if config.syncInterval != nil {
 		syncInterval = *config.syncInterval
 	}
-	return openEmbeddedReplicaConnector(dbPath, primaryUrl, authToken, readYourWrites, encryptionKey, syncInterval)
+	return openEmbeddedReplicaConnector(dbPath, primaryUrl, authToken, readYourWrites, encryptionKey, syncInterval, config.extensions)
 }
 
 type driver struct{}
@@ -191,7 +208,7 @@ func openRemoteConnector(primaryUrl, authToken string) (*Connector, error) {
 	return &Connector{nativeDbPtr: nativeDbPtr}, nil
 }
 
-func openEmbeddedReplicaConnector(dbPath, primaryUrl, authToken string, readYourWrites bool, encryptionKey string, syncInterval time.Duration) (*Connector, error) {
+func openEmbeddedReplicaConnector(dbPath, primaryUrl, authToken string, readYourWrites bool, encryptionKey string, syncInterval time.Duration, extensions []extension) (*Connector, error) {
 	var closeCh chan struct{}
 	var closeAckCh chan struct{}
 	nativeDbPtr, err := libsqlOpenWithSync(dbPath, primaryUrl, authToken, readYourWrites, encryptionKey)
@@ -224,10 +241,11 @@ func openEmbeddedReplicaConnector(dbPath, primaryUrl, authToken string, readYour
 			}
 		}()
 	}
-	return &Connector{nativeDbPtr: nativeDbPtr, closeCh: closeCh, closeAckCh: closeAckCh}, nil
+	return &Connector{extensions: extensions, nativeDbPtr: nativeDbPtr, closeCh: closeCh, closeAckCh: closeAckCh}, nil
 }
 
 type Connector struct {
+	extensions  []extension
 	nativeDbPtr C.libsql_database_t
 	closeCh     chan<- struct{}
 	closeAckCh  <-chan struct{}
@@ -255,6 +273,26 @@ func (c *Connector) Connect(ctx context.Context) (sqldriver.Conn, error) {
 	nativeConnPtr, err := libsqlConnect(c.nativeDbPtr)
 	if err != nil {
 		return nil, err
+	}
+	for _, ext := range c.extensions {
+		err := func() error {
+			extPath := C.CString(ext.path)
+			defer C.free(unsafe.Pointer(extPath))
+			var extEntryPoint *C.char = nil
+			if ext.entryPoint != "" {
+				extEntryPoint = C.CString(ext.entryPoint)
+				defer C.free(unsafe.Pointer(extEntryPoint))
+			}
+			var errMsg *C.char
+			statusCode := C.libsql_load_extension(nativeConnPtr, extPath, extEntryPoint, &errMsg)
+			if statusCode != 0 {
+				return libsqlError(fmt.Sprintf("failed to load extension %s %s", ext.path, ext.entryPoint), statusCode, errMsg)
+			}
+			return nil
+		}()
+		if err != nil {
+			return nil, err
+		}
 	}
 	return &conn{nativePtr: nativeConnPtr}, nil
 }
