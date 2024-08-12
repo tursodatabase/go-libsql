@@ -53,9 +53,9 @@ type Option interface {
 
 type option func(*config) error
 
-type replicated struct {
-	frame_no int
-	frames_synced int
+type Replicated struct {
+	FrameNo int
+	FramesSynced int
 }
 
 func (o option) apply(c *config) error {
@@ -171,15 +171,15 @@ func (d driver) OpenConnector(dbAddress string) (sqldriver.Connector, error) {
 	return nil, fmt.Errorf("unsupported URL scheme: %s\nThis driver supports only URLs that start with libsql://, file:, https:// or http://", u.Scheme)
 }
 
-func libsqlSync(nativeDbPtr C.libsql_database_t) (replicated, error) {
+func libsqlSync(nativeDbPtr C.libsql_database_t) (Replicated, error) {
 	var errMsg *C.char
 	var rep C.replicated;
 	statusCode := C.libsql_sync2(nativeDbPtr, &rep, &errMsg)
 	if statusCode != 0 {
-		return replicated{0, 0}, libsqlError("failed to sync database ", statusCode, errMsg)
+		return Replicated{0, 0}, libsqlError("failed to sync database ", statusCode, errMsg)
 	}
 
-	return replicated{frame_no: int(rep.frame_no), frames_synced: int(rep.frames_synced)}, nil
+	return Replicated{FrameNo: int(rep.frame_no), FramesSynced: int(rep.frames_synced)}, nil
 }
 
 func openLocalConnector(dbPath string) (*Connector, error) {
@@ -240,7 +240,7 @@ type Connector struct {
 	closeAckCh  <-chan struct{}
 }
 
-func (c *Connector) Sync() (replicated, error) {
+func (c *Connector) Sync() (Replicated, error) {
 	return libsqlSync(c.nativeDbPtr)
 }
 
