@@ -53,6 +53,11 @@ type Option interface {
 
 type option func(*config) error
 
+type replicated struct {
+	frame_no int
+	frames_synced int
+}
+
 func (o option) apply(c *config) error {
 	return o(c)
 }
@@ -166,13 +171,15 @@ func (d driver) OpenConnector(dbAddress string) (sqldriver.Connector, error) {
 	return nil, fmt.Errorf("unsupported URL scheme: %s\nThis driver supports only URLs that start with libsql://, file:, https:// or http://", u.Scheme)
 }
 
-func libsqlSync(nativeDbPtr C.libsql_database_t) error {
+func libsqlSync(nativeDbPtr C.libsql_database_t) (*replicated, error) {
 	var errMsg *C.char
-	statusCode := C.libsql_sync(nativeDbPtr, &errMsg)
+	var rep C.replicated;
+	statusCode := C.libsql_sync2(nativeDbPtr, &rep, &errMsg)
 	if statusCode != 0 {
-		return libsqlError("failed to sync database ", statusCode, errMsg)
+		return nil, libsqlError("failed to sync database ", statusCode, errMsg)
 	}
-	return nil
+
+	return &replicated{frame_no: int(rep.frame_no), frames_synced: int(rep.frames_synced)}, nil
 }
 
 func openLocalConnector(dbPath string) (*Connector, error) {
@@ -198,7 +205,7 @@ func openEmbeddedReplicaConnector(dbPath, primaryUrl, authToken string, readYour
 	if err != nil {
 		return nil, err
 	}
-	if err := libsqlSync(nativeDbPtr); err != nil {
+	if _, err := libsqlSync(nativeDbPtr); err != nil {
 		C.libsql_close(nativeDbPtr)
 		return nil, err
 	}
@@ -217,7 +224,7 @@ func openEmbeddedReplicaConnector(dbPath, primaryUrl, authToken string, readYour
 					closeAckCh <- struct{}{}
 					return
 				case <-timerCh:
-					if err := libsqlSync(nativeDbPtr); err != nil {
+					if _, err := libsqlSync(nativeDbPtr); err != nil {
 						fmt.Println(err)
 					}
 				}
@@ -233,7 +240,7 @@ type Connector struct {
 	closeAckCh  <-chan struct{}
 }
 
-func (c *Connector) Sync() error {
+func (c *Connector) Sync() (*replicated, error) {
 	return libsqlSync(c.nativeDbPtr)
 }
 

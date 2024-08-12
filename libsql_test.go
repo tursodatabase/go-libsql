@@ -485,7 +485,7 @@ func TestSync(t *testing.T) {
 		}
 		return connector
 	}, func(c *Connector) {
-		if err := c.Sync(); err != nil {
+		if _, err := c.Sync(); err != nil {
 			t.Fatal(err)
 		}
 	})
