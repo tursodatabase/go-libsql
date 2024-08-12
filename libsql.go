@@ -171,15 +171,15 @@ func (d driver) OpenConnector(dbAddress string) (sqldriver.Connector, error) {
 	return nil, fmt.Errorf("unsupported URL scheme: %s\nThis driver supports only URLs that start with libsql://, file:, https:// or http://", u.Scheme)
 }
 
-func libsqlSync(nativeDbPtr C.libsql_database_t) (*replicated, error) {
+func libsqlSync(nativeDbPtr C.libsql_database_t) (replicated, error) {
 	var errMsg *C.char
 	var rep C.replicated;
 	statusCode := C.libsql_sync2(nativeDbPtr, &rep, &errMsg)
 	if statusCode != 0 {
-		return nil, libsqlError("failed to sync database ", statusCode, errMsg)
+		return replicated{0, 0}, libsqlError("failed to sync database ", statusCode, errMsg)
 	}
 
-	return &replicated{frame_no: int(rep.frame_no), frames_synced: int(rep.frames_synced)}, nil
+	return replicated{frame_no: int(rep.frame_no), frames_synced: int(rep.frames_synced)}, nil
 }
 
 func openLocalConnector(dbPath string) (*Connector, error) {
@@ -240,7 +240,7 @@ type Connector struct {
 	closeAckCh  <-chan struct{}
 }
 
-func (c *Connector) Sync() (*replicated, error) {
+func (c *Connector) Sync() (replicated, error) {
 	return libsqlSync(c.nativeDbPtr)
 }
 
