@@ -57,9 +57,12 @@ func run() (err error) {
 		}
 		switch choice {
 		case 1:
-			if err := connector.Sync(); err != nil {
+			replicated, err := connector.Sync()
+			if err != nil {
 				return err
 			}
+
+			fmt.Println("%d frames synced", replicated.frames_synced)
 		case 2:
 			err = func() (err error) {
 				rows, err := db.Query("SELECT * FROM test")
