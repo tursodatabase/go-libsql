@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gotest.tools/assert"
 	"io"
 	"math/rand"
 	"net/http"
@@ -16,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gotest.tools/assert"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -108,8 +109,8 @@ func (db Database) sync() {
 }
 
 type Table struct {
-	name string
 	db   Database
+	name string
 }
 
 func (db Database) createTable() Table {
@@ -118,7 +119,7 @@ func (db Database) createTable() Table {
 	db.t.Cleanup(func() {
 		db.exec("DROP TABLE " + name)
 	})
-	return Table{name, db}
+	return Table{name: name, db: db}
 }
 
 func (db Database) assertTable(name string) {
@@ -186,13 +187,13 @@ func (t Table) assertCount(expectedCount int, queryFn func() *sql.Rows) {
 func (t Table) beginTx() Tx {
 	tx, err := t.db.BeginTx(t.db.ctx, nil)
 	t.db.t.FatalOnError(err)
-	return Tx{tx, t, nil}
+	return Tx{ctx: nil, t: t, rawTx: tx}
 }
 
 func (t Table) beginTxWithContext(ctx context.Context) Tx {
 	tx, err := t.db.BeginTx(ctx, nil)
 	t.db.t.FatalOnError(err)
-	return Tx{tx, t, &ctx}
+	return Tx{ctx: &ctx, t: t, rawTx: tx}
 }
 
 func (t Table) prepareInsertStmt() PreparedStmt {
@@ -213,9 +214,9 @@ func (s PreparedStmt) exec(args ...any) sql.Result {
 }
 
 type Tx struct {
-	*sql.Tx
-	t   Table
-	ctx *context.Context
+	ctx   *context.Context
+	rawTx *sql.Tx
+	t     Table
 }
 
 func (t Tx) context() context.Context {
@@ -226,13 +227,13 @@ func (t Tx) context() context.Context {
 }
 
 func (t Tx) exec(sql string, args ...any) sql.Result {
-	res, err := t.ExecContext(t.context(), sql, args...)
+	res, err := t.rawTx.ExecContext(t.context(), sql, args...)
 	t.t.db.t.FatalOnError(err)
 	return res
 }
 
 func (t Tx) query(sql string, args ...any) *sql.Rows {
-	rows, err := t.QueryContext(t.context(), sql, args...)
+	rows, err := t.rawTx.QueryContext(t.context(), sql, args...)
 	t.t.db.t.FatalOnError(err)
 	return rows
 }
@@ -268,7 +269,7 @@ func (t Tx) assertRowExists(id int) {
 }
 
 func (t Tx) prepareInsertStmt() PreparedStmt {
-	stmt, err := t.Prepare("INSERT INTO " + t.t.name + " (a, b) VALUES (?, ?)")
+	stmt, err := t.rawTx.Prepare("INSERT INTO " + t.t.name + " (a, b) VALUES (?, ?)")
 	t.t.db.t.FatalOnError(err)
 	return PreparedStmt{stmt, t.t}
 }
@@ -505,7 +506,7 @@ func TestEncryption(tt *testing.T) {
 	}
 	dbPath := dir + "/test.db"
 	t.Cleanup(func() {
-		defer os.RemoveAll(dir)
+		os.RemoveAll(dir)
 	})
 
 	encryptionKey := "SuperSecretKey"
@@ -519,6 +520,7 @@ func TestEncryption(tt *testing.T) {
 	t.FatalOnError(err)
 	db := sql.OpenDB(connector)
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
 	_, err = db.ExecContext(ctx, "CREATE TABLE "+table+" (id INTEGER PRIMARY KEY, name TEXT)")
 	if err != nil {
 		cancel()
@@ -542,14 +544,12 @@ func TestEncryption(tt *testing.T) {
 	db = sql.OpenDB(connector)
 	rows, err := db.QueryContext(ctx, "SELECT * FROM "+table)
 	if err != nil {
-		cancel()
 		db.Close()
 		connector.Close()
 		t.FatalOnError(err)
 	}
 	defer rows.Close()
 	if !rows.Next() {
-		cancel()
 		db.Close()
 		connector.Close()
 		t.Fatal("expected one row")
@@ -558,19 +558,16 @@ func TestEncryption(tt *testing.T) {
 	var name string
 	err = rows.Scan(&id, &name)
 	if err != nil {
-		cancel()
 		db.Close()
 		connector.Close()
 		t.FatalOnError(err)
 	}
 	if id != 1 {
-		cancel()
 		db.Close()
 		connector.Close()
 		t.Fatal("id should be 1")
 	}
 	if name != "hello" {
-		cancel()
 		db.Close()
 		connector.Close()
 		t.Fatal("name should be hello")
@@ -696,7 +693,7 @@ func testTransaction(db *Database) {
 	tx.assertRowDoesNotExist(20)
 	tx.assertRowExists(0)
 	tx.assertRowExists(19)
-	db.t.FatalOnError(tx.Commit())
+	db.t.FatalOnError(tx.rawTx.Commit())
 	db.sync()
 	table.assertRowsCount(20)
 	table.assertRowDoesNotExist(20)
@@ -714,7 +711,7 @@ func TestMultiLineStatement(t *testing.T) {
 	t.Cleanup(func() {
 		db.exec("DROP TABLE my_table")
 	})
-	table := Table{"my_table", *db}
+	table := Table{name: "my_table", db: *db}
 	db.assertTable("my_table")
 	table.assertRowsCount(1)
 }
@@ -740,7 +737,7 @@ func testPreparedStatementInTransaction(db *Database) {
 	db.t.FatalOnError(stmt.Close())
 	tx.assertRowsCount(1)
 	tx.assertRowExists(1)
-	db.t.FatalOnError(tx.Commit())
+	db.t.FatalOnError(tx.rawTx.Commit())
 	db.sync()
 	table.assertRowsCount(1)
 	table.assertRowExists(1)
@@ -767,7 +764,7 @@ func testPreparedStatementInTransactionRollback(db *Database) {
 	db.t.FatalOnError(stmt.Close())
 	tx.assertRowsCount(1)
 	tx.assertRowExists(1)
-	db.t.FatalOnError(tx.Rollback())
+	db.t.FatalOnError(tx.rawTx.Rollback())
 	db.sync()
 	table.assertRowsCount(0)
 	table.assertRowDoesNotExist(1)
@@ -823,7 +820,7 @@ func testCancelContextWithTransaction(db *Database) {
 	tx.assertRowExists(19)
 	// let's cancel the context before the commit
 	cancel()
-	err := tx.Commit()
+	err := tx.rawTx.Commit()
 	if err == nil {
 		db.t.FatalWithMsg("should have failed")
 	}
@@ -831,7 +828,7 @@ func testCancelContextWithTransaction(db *Database) {
 		db.t.FatalWithMsg("should have failed with context.Canceled")
 	}
 	// rolling back the transaction should not result in any error
-	db.t.FatalOnError(tx.Rollback())
+	db.t.FatalOnError(tx.rawTx.Rollback())
 }
 
 func TestTransactionRollback(t *testing.T) {
@@ -856,7 +853,7 @@ func testTransactionRollback(db *Database) {
 	tx.assertRowDoesNotExist(20)
 	tx.assertRowExists(0)
 	tx.assertRowExists(19)
-	db.t.FatalOnError(tx.Rollback())
+	db.t.FatalOnError(tx.rawTx.Rollback())
 	db.sync()
 	table.assertRowsCount(0)
 }
