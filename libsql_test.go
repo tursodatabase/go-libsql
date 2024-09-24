@@ -109,8 +109,8 @@ func (db Database) sync() {
 }
 
 type Table struct {
-	db   Database
 	name string
+	db   Database
 }
 
 func (db Database) createTable() Table {
@@ -214,9 +214,9 @@ func (s PreparedStmt) exec(args ...any) sql.Result {
 }
 
 type Tx struct {
-	ctx   *context.Context
 	rawTx *sql.Tx
 	t     Table
+	ctx   *context.Context
 }
 
 func (t Tx) context() context.Context {
@@ -523,14 +523,12 @@ func TestEncryption(tt *testing.T) {
 	defer cancel()
 	_, err = db.ExecContext(ctx, "CREATE TABLE "+table+" (id INTEGER PRIMARY KEY, name TEXT)")
 	if err != nil {
-		cancel()
 		db.Close()
 		connector.Close()
 		t.FatalOnError(err)
 	}
 	_, err = db.ExecContext(ctx, "INSERT INTO "+table+" (id, name) VALUES (1, 'hello')")
 	if err != nil {
-		cancel()
 		db.Close()
 		connector.Close()
 		t.FatalOnError(err)

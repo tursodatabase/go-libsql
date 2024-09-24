@@ -62,7 +62,7 @@ func run() (err error) {
 				return err
 			}
 
-			fmt.Printf("%d frames synced", replicated.FramesSynced)
+			fmt.Printf("%d frames synced\n", replicated.FramesSynced)
 		case 2:
 			err = func() (err error) {
 				rows, err := db.Query("SELECT * FROM test")
