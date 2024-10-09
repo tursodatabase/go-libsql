@@ -66,7 +66,7 @@ go get github.com/tursodatabase/go-libsql
 
 ## Quickstart
 
-The example below uses Embedded Replicas and syncs data every 1000ms from Turso.
+The example below uses Embedded Replicas and syncs data every one minute from Turso.
 
 ```go
 package main
