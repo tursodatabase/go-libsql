@@ -747,7 +747,6 @@ Outerloop:
 				return libsqlError(fmt.Sprint("failed to get string for column ", i), statusCode, errMsg)
 			}
 			str := C.GoString(ptr)
-			str = strings.TrimSuffix(str, "Z")
 			C.libsql_free_string(ptr)
 			for _, format := range []string{
 				"2006-01-02 15:04:05.999999999-07:00",
