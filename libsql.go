@@ -749,6 +749,7 @@ Outerloop:
 			str := C.GoString(ptr)
 			C.libsql_free_string(ptr)
 			for _, format := range []string{
+				time.RFC3339Nano,
 				"2006-01-02 15:04:05.999999999-07:00",
 				"2006-01-02T15:04:05.999999999-07:00",
 				"2006-01-02 15:04:05.999999999",
