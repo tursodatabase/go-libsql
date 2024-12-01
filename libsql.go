@@ -108,6 +108,14 @@ func WithSyncInterval(interval time.Duration) Option {
 	})
 }
 
+// NewEmbeddedReplicaConnectorContext behaves like NewEmbeddedReplicaConnector, but returns early if the provided
+// context's deadline is exceeded, or if it's canceled.
+func NewEmbeddedReplicaConnectorContext(ctx context.Context, dbPath string, primaryUrl string, opts ...Option) (*Connector, error) {
+	return doContext(ctx, func() (*Connector, error) {
+		return NewEmbeddedReplicaConnector(dbPath, primaryUrl, opts...)
+	})
+}
+
 func NewEmbeddedReplicaConnector(dbPath string, primaryUrl string, opts ...Option) (*Connector, error) {
 	var config config
 	errs := make([]error, 0, len(opts))
