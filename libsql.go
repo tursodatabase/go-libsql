@@ -173,7 +173,7 @@ func (d driver) OpenConnector(dbAddress string) (sqldriver.Connector, error) {
 
 func libsqlSync(nativeDbPtr C.libsql_database_t) (Replicated, error) {
 	var errMsg *C.char
-	var rep C.replicated;
+	var rep C.replicated
 	statusCode := C.libsql_sync2(nativeDbPtr, &rep, &errMsg)
 	if statusCode != 0 {
 		return Replicated{0, 0}, libsqlError("failed to sync database ", statusCode, errMsg)
@@ -490,6 +490,12 @@ func (c *conn) executeNoArgs(query string, exec bool) (C.libsql_rows_t, error) {
 	return rows, nil
 }
 
+func (c *conn) executeContext(ctx context.Context, query string, args []sqldriver.NamedValue, exec bool) (C.libsql_rows_t, error) {
+	return doContext(ctx, func() (C.libsql_rows_t, error) {
+		return c.execute(query, args, exec)
+	})
+}
+
 func (c *conn) execute(query string, args []sqldriver.NamedValue, exec bool) (C.libsql_rows_t, error) {
 	if len(args) == 0 {
 		return c.executeNoArgs(query, exec)
@@ -571,7 +577,7 @@ func (r execResult) RowsAffected() (int64, error) {
 }
 
 func (c *conn) ExecContext(ctx context.Context, query string, args []sqldriver.NamedValue) (sqldriver.Result, error) {
-	rows, err := c.execute(query, args, true)
+	rows, err := c.executeContext(ctx, query, args, true)
 	if err != nil {
 		return nil, err
 	}
