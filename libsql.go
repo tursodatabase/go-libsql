@@ -772,9 +772,37 @@ Outerloop:
 }
 
 func (c *conn) QueryContext(ctx context.Context, query string, args []sqldriver.NamedValue) (sqldriver.Rows, error) {
-	rowsNativePtr, err := c.execute(query, args, false)
+	rowsNativePtr, err := c.executeContext(ctx, query, args, false)
 	if err != nil {
 		return nil, err
 	}
 	return newRows(rowsNativePtr)
+}
+
+// doContext runs a blocking function f in a goroutine, and exits early if the given context is
+// canceled or if its deadline is exceeded.
+func doContext[U any](ctx context.Context, f func() (U, error)) (U, error) {
+	var res U
+	resCh := make(chan U, 1)
+	errCh := make(chan error, 1)
+
+	go func() {
+		defer close(resCh)
+		defer close(errCh)
+		res, err := f()
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resCh <- res
+	}()
+
+	select {
+	case res = <-resCh:
+		return res, nil
+	case err := <-errCh:
+		return res, err
+	case <-ctx.Done():
+		return res, ctx.Err()
+	}
 }
