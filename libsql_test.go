@@ -14,6 +14,7 @@ import (
 	"os"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1358,4 +1359,78 @@ func TestErrorRowsNext(t *testing.T) {
 			t.Fatal("unexpected error:", err)
 		}
 	})
+}
+
+func TestDoContext(t *testing.T) {
+	tests := []struct {
+		name        string
+		timeout     time.Duration
+		f           func() (any, error)
+		expected    any
+		expectedErr string
+	}{{
+		name:    "returns immediately if the context is done",
+		timeout: time.Nanosecond,
+		f: func() (any, error) {
+			ch := make(chan struct{})
+			go func() {
+				time.Sleep(1 * time.Hour)
+				ch <- struct{}{}
+			}()
+			<-ch
+			return "some res", nil
+		},
+		expectedErr: context.DeadlineExceeded.Error(),
+	}, {
+		name:    "returns the result if the function finishes before the context",
+		timeout: time.Hour,
+		f: func() (any, error) {
+			return "some res", nil
+		},
+		expected: "some res",
+	}, {
+		name:    "returns the error if the function fails before the context is done",
+		timeout: time.Hour,
+		f: func() (any, error) {
+			return nil, errors.New("some error")
+		},
+		expectedErr: "some error",
+	}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), tt.timeout)
+			defer cancel()
+			res, err := doContext(ctx, tt.f)
+			if tt.expectedErr != "" && err.Error() != tt.expectedErr {
+				t.Errorf("Expected error %q, got %q", tt.expectedErr, err.Error())
+				return
+			}
+			if res != tt.expected {
+				t.Errorf("Expected result %v, got %v", tt.expected, res)
+			}
+		})
+
+		t.Run("doesn't leak the goroutine it starts", func(t *testing.T) {
+			timeout := 50 * time.Millisecond
+			ctx, cancel := context.WithTimeout(context.Background(), tt.timeout)
+			defer cancel()
+
+			wg := sync.WaitGroup{}
+			wg.Add(1)
+
+			_, err := doContext(ctx, func() (any, error) {
+				// Make the goroutine take longer than the context's deadline.
+				<-time.Tick(timeout + 100*time.Millisecond)
+				wg.Done()
+				return nil, errors.New("some error")
+			})
+			if err.Error() != "context deadline exceeded" {
+				t.Errorf("Expected the context to be done before the goroutine, got error %q instead", err)
+				return
+			}
+			// Wait for the goroutine. If this blocked forever, the tests would timeout.
+			wg.Wait()
+		})
+	}
 }

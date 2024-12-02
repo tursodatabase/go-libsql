@@ -108,6 +108,14 @@ func WithSyncInterval(interval time.Duration) Option {
 	})
 }
 
+// NewEmbeddedReplicaConnectorContext behaves like NewEmbeddedReplicaConnector, but returns early if the provided
+// context's deadline is exceeded, or if it's canceled.
+func NewEmbeddedReplicaConnectorContext(ctx context.Context, dbPath string, primaryUrl string, opts ...Option) (*Connector, error) {
+	return doContext(ctx, func() (*Connector, error) {
+		return NewEmbeddedReplicaConnector(dbPath, primaryUrl, opts...)
+	})
+}
+
 func NewEmbeddedReplicaConnector(dbPath string, primaryUrl string, opts ...Option) (*Connector, error) {
 	var config config
 	errs := make([]error, 0, len(opts))
@@ -173,7 +181,7 @@ func (d driver) OpenConnector(dbAddress string) (sqldriver.Connector, error) {
 
 func libsqlSync(nativeDbPtr C.libsql_database_t) (Replicated, error) {
 	var errMsg *C.char
-	var rep C.replicated;
+	var rep C.replicated
 	statusCode := C.libsql_sync2(nativeDbPtr, &rep, &errMsg)
 	if statusCode != 0 {
 		return Replicated{0, 0}, libsqlError("failed to sync database ", statusCode, errMsg)
@@ -490,6 +498,12 @@ func (c *conn) executeNoArgs(query string, exec bool) (C.libsql_rows_t, error) {
 	return rows, nil
 }
 
+func (c *conn) executeContext(ctx context.Context, query string, args []sqldriver.NamedValue, exec bool) (C.libsql_rows_t, error) {
+	return doContext(ctx, func() (C.libsql_rows_t, error) {
+		return c.execute(query, args, exec)
+	})
+}
+
 func (c *conn) execute(query string, args []sqldriver.NamedValue, exec bool) (C.libsql_rows_t, error) {
 	if len(args) == 0 {
 		return c.executeNoArgs(query, exec)
@@ -571,7 +585,7 @@ func (r execResult) RowsAffected() (int64, error) {
 }
 
 func (c *conn) ExecContext(ctx context.Context, query string, args []sqldriver.NamedValue) (sqldriver.Result, error) {
-	rows, err := c.execute(query, args, true)
+	rows, err := c.executeContext(ctx, query, args, true)
 	if err != nil {
 		return nil, err
 	}
@@ -772,9 +786,37 @@ Outerloop:
 }
 
 func (c *conn) QueryContext(ctx context.Context, query string, args []sqldriver.NamedValue) (sqldriver.Rows, error) {
-	rowsNativePtr, err := c.execute(query, args, false)
+	rowsNativePtr, err := c.executeContext(ctx, query, args, false)
 	if err != nil {
 		return nil, err
 	}
 	return newRows(rowsNativePtr)
+}
+
+// doContext runs a blocking function f in a goroutine, and exits early if the given context is
+// canceled or if its deadline is exceeded.
+func doContext[U any](ctx context.Context, f func() (U, error)) (U, error) {
+	var res U
+	resCh := make(chan U, 1)
+	errCh := make(chan error, 1)
+
+	go func() {
+		defer close(resCh)
+		defer close(errCh)
+		res, err := f()
+		if err != nil {
+			errCh <- err
+			return
+		}
+		resCh <- res
+	}()
+
+	select {
+	case res = <-resCh:
+		return res, nil
+	case err := <-errCh:
+		return res, err
+	case <-ctx.Done():
+		return res, ctx.Err()
+	}
 }
