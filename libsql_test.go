@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gotest.tools/assert"
 	"io"
 	"math/rand"
 	"net/http"
@@ -16,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gotest.tools/assert"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -649,6 +650,50 @@ func TestReadYourWrites(tt *testing.T) {
 	table.assertRowDoesNotExist(20)
 	table.assertRowExists(0)
 	table.assertRowExists(19)
+}
+
+func TestConnector(tt *testing.T) {
+	t := T{tt}
+	primaryUrl := os.Getenv("LIBSQL_PRIMARY_URL")
+	if primaryUrl == "" {
+		t.Skip("LIBSQL_PRIMARY_URL is not set")
+		return
+	}
+	authToken := os.Getenv("LIBSQL_AUTH_TOKEN")
+	options := []Option{}
+	if authToken != "" {
+		options = append(options, WithAuthToken(authToken))
+	}
+	connector, err := NewConnector(primaryUrl, options...)
+	t.FatalOnError(err)
+	database := sql.OpenDB(connector)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	t.Cleanup(func() {
+		database.Close()
+		connector.Close()
+		cancel()
+	})
+	db := &Database{database, connector, t, ctx}
+	table := db.createTable()
+	table.insertRows(0, 10)
+	table.insertRowsWithArgs(10, 10)
+	table.assertRowsCount(20)
+	table.assertRowDoesNotExist(20)
+	table.assertRowExists(0)
+	table.assertRowExists(19)
+}
+
+func TestConnectorUnsupportedOpts(tt *testing.T) {
+	t := T{tt}
+	_, err := NewConnector("test-url", WithEncryption("foo-string"))
+	if err == nil {
+		t.Fatal("'NewConnector' shouldn't allow encryption option")
+	}
+
+	_, err = NewConnector("test-url", WithReadYourWrites(true))
+	if err == nil {
+		t.Fatal("'NewConnector' shouldn't allow readyourwrites option")
+	}
 }
 
 func TestPreparedStatements(t *testing.T) {
