@@ -45,6 +45,7 @@ type config struct {
 	readYourWrites *bool
 	encryptionKey  *string
 	syncInterval   *time.Duration
+	proxy 	       *string
 }
 
 type Option interface {
@@ -108,6 +109,19 @@ func WithSyncInterval(interval time.Duration) Option {
 	})
 }
 
+func WithProxy(proxy string) Option {
+	return option(func(o *config) error {
+		if o.proxy != nil {
+			return fmt.Errorf("proxy already set")
+		}
+		if proxy == "" {
+			return fmt.Errorf("proxy must not be empty")
+		}
+		o.proxy = &proxy
+		return nil
+	})
+}
+
 func NewEmbeddedReplicaConnector(dbPath string, primaryUrl string, opts ...Option) (*Connector, error) {
 	var config config
 	errs := make([]error, 0, len(opts))
@@ -119,6 +133,24 @@ func NewEmbeddedReplicaConnector(dbPath string, primaryUrl string, opts ...Optio
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
 	}
+
+	u, err := url.Parse(primaryUrl)
+	if err != nil{
+		return nil, err
+	}
+
+	if config.proxy != nil {
+		p, err := url.Parse(*config.proxy)
+		if err != nil {
+			return nil, err
+		}
+		
+		u.Host = p.Host
+		if p.Scheme != "" {
+			u.Scheme = p.Scheme
+		}
+	}
+
 	authToken := ""
 	if config.authToken != nil {
 		authToken = *config.authToken
@@ -135,7 +167,76 @@ func NewEmbeddedReplicaConnector(dbPath string, primaryUrl string, opts ...Optio
 	if config.syncInterval != nil {
 		syncInterval = *config.syncInterval
 	}
-	return openEmbeddedReplicaConnector(dbPath, primaryUrl, authToken, readYourWrites, encryptionKey, syncInterval)
+	return openEmbeddedReplicaConnector(dbPath, u.String(), authToken, readYourWrites, encryptionKey, syncInterval)
+}
+
+func NewConnector(dbAddress string, opts ...Option) (*Connector, error) {
+	if strings.HasPrefix(dbAddress, ":memory:") {
+		return openLocalConnector(dbAddress)
+	}
+
+	var config config
+	errs := make([]error, 0, len(opts))
+	for _, opt := range opts {
+		if err := opt.apply(&config); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+
+	if config.encryptionKey != nil {
+		return nil, fmt.Errorf("'WithEncryptionKey' option only supported for EmbeddedReplicaConnector")
+	}
+
+	if config.readYourWrites != nil {
+		return nil, fmt.Errorf("'WithReadYourWrites' option only supported for EmbeddedReplicaConnector")
+	}
+
+	u, err := url.Parse(dbAddress)
+	if err != nil {
+		return nil, err
+	}
+	
+	if config.proxy != nil {
+		p, err := url.Parse(*config.proxy)
+		if err != nil {
+			return nil, err
+		}
+		
+		u.Host = p.Host
+		if p.Scheme != "" {
+			u.Scheme = p.Scheme
+		}
+	}
+	
+	query := u.Query()
+	if query.Has("auth_token") {
+		return nil, fmt.Errorf("'auth_token' usage forbidden. Please use 'WithAuthToken' option instead")
+	}
+	if query.Has("authToken") {
+		return nil, fmt.Errorf("'authToken' usage forbidden. Please use 'WithAuthToken' option instead")
+	}
+	if query.Has("jwt") {
+		return nil, fmt.Errorf("'jwt' usage forbidden. Please use 'WithAuthToken' option instead")
+	}
+
+	for name := range query {
+		return nil, fmt.Errorf("unknown query parameter %#v", name)
+	}
+
+	switch u.Scheme {
+	case "file":
+		return openLocalConnector(dbAddress)
+	case "http":
+		fallthrough
+	case "https":
+		fallthrough
+	case "libsql":
+		return openRemoteConnector(u.String(), *config.authToken)
+	}
+	return nil, fmt.Errorf("unsupported URL scheme: %s\nThis driver supports only URLs that start with libsql://, file:, https:// or http://", u.Scheme)
 }
 
 type driver struct{}
