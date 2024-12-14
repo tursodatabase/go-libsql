@@ -3,29 +3,22 @@ package main
 import (
 	"database/sql"
 	"fmt"
-	"log/slog"
 	"os"
 	"time"
 
 	_ "github.com/tursodatabase/go-libsql"
-	"github.com/tursodatabase/go-libsql/example/remote/envs"
 )
 
 func main() {
-	setupSlog()
 	if err := run(); err != nil {
-		slog.Error("error running example", "error", err)
+		fmt.Fprintf(os.Stderr, "error running example: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 func run() (err error) {
-	err = envs.Load()
-	if err != nil {
-		return fmt.Errorf("error loading environment variables: %w", err)
-	}
 	// Get database URL and auth token from environment variables
-	dbUrl := envs.TURSO_URL
+	dbUrl := os.Getenv("TURSO_URL")
 	if dbUrl == "" {
 		return fmt.Errorf("TURSO_URL environment variable not set")
 	}
@@ -40,17 +33,9 @@ func run() (err error) {
 	if err != nil {
 		return fmt.Errorf("error opening cloud db: %w", err)
 	}
-	defer func() {
-		if closeErr := db.Close(); closeErr != nil {
-			slog.Error("error closing libsql db", "error", closeErr)
-			if err == nil {
-				err = closeErr
-			}
-		} else {
-			slog.Debug("closed libsql db")
-		}
-	}()
-	// Configure connection pool: https://github.com/tursodatabase/go-libsql/issues/13
+	defer db.Close()
+
+	// Configure connection pool
 	db.SetConnMaxIdleTime(9 * time.Second)
 
 	// Create test table
@@ -72,9 +57,9 @@ func run() (err error) {
 		if err != nil {
 			return fmt.Errorf("error inserting data: %w", err)
 		}
-		slog.Debug("inserted test data")
+		fmt.Println("Inserted test data")
 	} else {
-		slog.Debug("test data already exists, skipping insert")
+		fmt.Println("Test data already exists, skipping insert")
 	}
 
 	// Query the data
@@ -82,14 +67,7 @@ func run() (err error) {
 	if err != nil {
 		return fmt.Errorf("error querying data: %w", err)
 	}
-	defer func() {
-		if closeErr := rows.Close(); closeErr != nil {
-			slog.Error("error closing rows", "error", closeErr)
-			if err == nil {
-				err = closeErr
-			}
-		}
-	}()
+	defer rows.Close()
 
 	// Print results
 	for rows.Next() {
@@ -104,21 +82,6 @@ func run() (err error) {
 		return fmt.Errorf("error iterating rows: %w", err)
 	}
 
-	slog.Debug("successfully connected and executed queries", "url", envs.TURSO_URL)
+	fmt.Printf("Successfully connected and executed queries on %s\n", dbUrl)
 	return nil
-}
-
-func setupSlog() {
-	// Configure slog to only show log level
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
-			// Remove time attribute
-			if a.Key == "time" {
-				return slog.Attr{}
-			}
-			return a
-		},
-	}))
-	slog.SetDefault(logger)
 }
