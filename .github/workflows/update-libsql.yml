@@ -1,0 +1,254 @@
+name: Build libsql libraries
+
+on:
+  workflow_dispatch:
+    inputs:
+      libsql_tag:
+        description: 'libsql repository tag to build (e.g. libsql-0.9.4)'
+        required: true
+        default: 'libsql-0.9.4'
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
+        include:
+          - target: x86_64-unknown-linux-gnu
+            output_dir: linux_amd64
+          - target: aarch64-unknown-linux-gnu
+            output_dir: linux_arm64
+    steps:
+      - name: Checkout go-libsql
+        uses: actions/checkout@v4
+        with:
+          path: go-libsql
+
+      - name: Set libsql tag
+        id: set-tag
+        run: |
+          TAG=${{ github.event.inputs.libsql_tag }}
+          echo "Using tag: $TAG"
+          echo "LIBSQL_TAG=$TAG" >> $GITHUB_ENV
+
+      - name: Checkout libsql at tag
+        uses: actions/checkout@v4
+        with:
+          repository: tursodatabase/libsql
+          ref: ${{ env.LIBSQL_TAG }}
+          path: libsql
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          override: true
+
+      - name: Install cross
+        run: cargo install cross
+
+      - name: Build libsql for ${{ matrix.target }}
+        working-directory: libsql/bindings/c
+        run: |
+          cross build --release --target ${{ matrix.target }}
+
+      - name: Create output directory
+        run: |
+          mkdir -p go-libsql/lib/${{ matrix.output_dir }}
+
+      - name: Copy library files
+        run: |
+          cp libsql/target/${{ matrix.target }}/release/libsql_experimental.a go-libsql/lib/${{ matrix.output_dir }}/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: libsql-${{ matrix.output_dir }}
+          path: go-libsql/lib/${{ matrix.output_dir }}
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout go-libsql
+        uses: actions/checkout@v4
+        with:
+          path: go-libsql
+
+      - name: Set libsql tag
+        id: set-tag
+        run: |
+          TAG=${{ github.event.inputs.libsql_tag }}
+          echo "Using tag: $TAG"
+          echo "LIBSQL_TAG=$TAG" >> $GITHUB_ENV
+
+      - name: Checkout libsql at tag
+        uses: actions/checkout@v4
+        with:
+          repository: tursodatabase/libsql
+          ref: ${{ env.LIBSQL_TAG }}
+          path: libsql
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Build libsql for macOS
+        working-directory: libsql/bindings/c
+        run: |
+          cargo build --release
+
+      - name: Create output directory
+        run: |
+          mkdir -p go-libsql/lib/darwin_arm64
+
+      - name: Copy library files
+        run: |
+          cp libsql/target/release/libsql_experimental.a go-libsql/lib/darwin_arm64/
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: libsql-darwin_arm64
+          path: go-libsql/lib/darwin_arm64
+
+  verify-linux-amd64:
+    needs: [build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout go-libsql
+        uses: actions/checkout@v4
+
+      - name: Download Linux AMD64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: libsql-linux_amd64
+          path: lib/linux_amd64
+
+      - name: Check binary details
+        run: |
+          echo "Linux AMD64 library size:"
+          ls -la lib/linux_amd64/libsql_experimental.a
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.20'
+
+      - name: Verify Linux AMD64 build
+        run: |
+          echo "Building example/local/main.go for Linux AMD64..."
+          cd example/local
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -v
+          echo "Linux AMD64 build successful!"
+
+  verify-linux-arm64:
+    needs: [build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout go-libsql
+        uses: actions/checkout@v4
+
+      - name: Download Linux ARM64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: libsql-linux_arm64
+          path: lib/linux_arm64
+
+      - name: Check binary details
+        run: |
+          echo "Linux ARM64 library size:"
+          ls -la lib/linux_arm64/libsql_experimental.a
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.20'
+
+      - name: Install cross-compiler for ARM64
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Verify Linux ARM64 build
+        run: |
+          echo "Building example/local/main.go for Linux ARM64..."
+          cd example/local
+          CC=aarch64-linux-gnu-gcc GOOS=linux GOARCH=arm64 CGO_ENABLED=1 go build -v
+          echo "Linux ARM64 build successful!"
+
+  verify-darwin-arm64:
+    needs: [build-macos]
+    runs-on: macos-latest
+    steps:
+      - name: Checkout go-libsql
+        uses: actions/checkout@v4
+
+      - name: Download Darwin ARM64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: libsql-darwin_arm64
+          path: lib/darwin_arm64
+
+      - name: Check binary details
+        run: |
+          echo "Darwin ARM64 library size:"
+          ls -la lib/darwin_arm64/libsql_experimental.a
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.20'
+
+      - name: Verify Darwin ARM64 build
+        run: |
+          echo "Building example/local/main.go for Darwin ARM64..."
+          cd example/local
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=1 go build -v
+          echo "Darwin ARM64 build successful!"
+
+  update-repository:
+    needs: [verify-linux-amd64, verify-linux-arm64, verify-darwin-arm64]
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Checkout go-libsql
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Copy artifacts to repository
+        run: |
+          mkdir -p lib/linux_amd64 lib/linux_arm64 lib/darwin_arm64
+          cp -r artifacts/libsql-linux_amd64/* lib/linux_amd64/
+          cp -r artifacts/libsql-linux_arm64/* lib/linux_arm64/
+          cp -r artifacts/libsql-darwin_arm64/* lib/darwin_arm64/
+          # Clean up artifacts directory to prevent it from being included in the PR
+          rm -rf artifacts
+
+      - name: Set libsql tag
+        id: set-tag
+        run: |
+          TAG=${{ github.event.inputs.libsql_tag }}
+          echo "LIBSQL_TAG=$TAG" >> $GITHUB_ENV
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          commit-message: "Update libsql libraries to `${{ env.LIBSQL_TAG }}`"
+          title: "Update libsql libraries to `${{ env.LIBSQL_TAG }}`"
+          body: |
+            This PR updates the libsql static libraries to version `${{ env.LIBSQL_TAG }}`.
+            
+            Libraries updated:
+            - `linux_amd64/libsql_experimental.a`
+            - `linux_arm64/libsql_experimental.a`
+            - `darwin_arm64/libsql_experimental.a`
+            
+            This update was generated automatically by the [update-libsql workflow](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).
+          branch: update-${{ env.LIBSQL_TAG }}
+          delete-branch: true
