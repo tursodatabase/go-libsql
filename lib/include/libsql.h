@@ -40,6 +40,7 @@ typedef struct {
   const char *encryption_key;
   int sync_interval;
   char with_webpki;
+  char offline;
 } libsql_config;
 
 typedef const libsql_connection *libsql_connection_t;
@@ -60,6 +61,8 @@ typedef struct {
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
+
+int libsql_enable_internal_tracing(void);
 
 int libsql_sync(libsql_database_t db, const char **out_err_msg);
 
