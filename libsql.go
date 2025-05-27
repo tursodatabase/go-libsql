@@ -54,7 +54,7 @@ type Option interface {
 type option func(*config) error
 
 type Replicated struct {
-	FrameNo int
+	FrameNo      int
 	FramesSynced int
 }
 
@@ -135,7 +135,37 @@ func NewEmbeddedReplicaConnector(dbPath string, primaryUrl string, opts ...Optio
 	if config.syncInterval != nil {
 		syncInterval = *config.syncInterval
 	}
-	return openEmbeddedReplicaConnector(dbPath, primaryUrl, authToken, readYourWrites, encryptionKey, syncInterval)
+	return openSyncConnector(dbPath, primaryUrl, authToken, readYourWrites, encryptionKey, syncInterval, false)
+}
+
+func NewSyncedDatabaseConnector(dbPath string, primaryUrl string, opts ...Option) (*Connector, error) {
+	var config config
+	errs := make([]error, 0, len(opts))
+	for _, opt := range opts {
+		if err := opt.apply(&config); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
+	}
+	authToken := ""
+	if config.authToken != nil {
+		authToken = *config.authToken
+	}
+	readYourWrites := true
+	if config.readYourWrites != nil {
+		readYourWrites = *config.readYourWrites
+	}
+	encryptionKey := ""
+	if config.encryptionKey != nil {
+		encryptionKey = *config.encryptionKey
+	}
+	syncInterval := time.Duration(0)
+	if config.syncInterval != nil {
+		syncInterval = *config.syncInterval
+	}
+	return openSyncConnector(dbPath, primaryUrl, authToken, readYourWrites, encryptionKey, syncInterval, true)
 }
 
 type driver struct{}
@@ -173,7 +203,7 @@ func (d driver) OpenConnector(dbAddress string) (sqldriver.Connector, error) {
 
 func libsqlSync(nativeDbPtr C.libsql_database_t) (Replicated, error) {
 	var errMsg *C.char
-	var rep C.replicated;
+	var rep C.replicated
 	statusCode := C.libsql_sync2(nativeDbPtr, &rep, &errMsg)
 	if statusCode != 0 {
 		return Replicated{0, 0}, libsqlError("failed to sync database ", statusCode, errMsg)
@@ -198,10 +228,10 @@ func openRemoteConnector(primaryUrl, authToken string) (*Connector, error) {
 	return &Connector{nativeDbPtr: nativeDbPtr}, nil
 }
 
-func openEmbeddedReplicaConnector(dbPath, primaryUrl, authToken string, readYourWrites bool, encryptionKey string, syncInterval time.Duration) (*Connector, error) {
+func openSyncConnector(dbPath, primaryUrl, authToken string, readYourWrites bool, encryptionKey string, syncInterval time.Duration, offline bool) (*Connector, error) {
 	var closeCh chan struct{}
 	var closeAckCh chan struct{}
-	nativeDbPtr, err := libsqlOpenWithSync(dbPath, primaryUrl, authToken, readYourWrites, encryptionKey)
+	nativeDbPtr, err := libsqlOpenWithSync(dbPath, primaryUrl, authToken, readYourWrites, encryptionKey, offline)
 	if err != nil {
 		return nil, err
 	}
@@ -309,7 +339,7 @@ func libsqlOpenRemote(url, authToken string) (C.libsql_database_t, error) {
 	return db, nil
 }
 
-func libsqlOpenWithSync(dbPath, primaryUrl, authToken string, readYourWrites bool, encryptionKey string) (C.libsql_database_t, error) {
+func libsqlOpenWithSync(dbPath, primaryUrl, authToken string, readYourWrites bool, encryptionKey string, offline bool) (C.libsql_database_t, error) {
 	dbPathNativeString := C.CString(dbPath)
 	defer C.free(unsafe.Pointer(dbPathNativeString))
 	primaryUrlNativeString := C.CString(primaryUrl)
@@ -321,15 +351,30 @@ func libsqlOpenWithSync(dbPath, primaryUrl, authToken string, readYourWrites boo
 	if readYourWrites {
 		readYourWritesNative = 1
 	}
+
+	var offlineNative C.char = 0
+	if offline {
+		offlineNative = 1
+	}
+
 	var encrytionKeyNativeString *C.char
 	if encryptionKey != "" {
 		encrytionKeyNativeString = C.CString(encryptionKey)
 		defer C.free(unsafe.Pointer(encrytionKeyNativeString))
 	}
 
+	config := C.libsql_config{
+		db_path:          dbPathNativeString,
+		auth_token:       authTokenNativeString,
+		primary_url:      primaryUrlNativeString,
+		read_your_writes: readYourWritesNative,
+		encryption_key:   encrytionKeyNativeString,
+		offline:          offlineNative,
+	}
+
 	var db C.libsql_database_t
 	var errMsg *C.char
-	statusCode := C.libsql_open_sync(dbPathNativeString, primaryUrlNativeString, authTokenNativeString, readYourWritesNative, encrytionKeyNativeString, &db, &errMsg)
+	statusCode := C.libsql_open_sync_with_config(config, &db, &errMsg)
 	if statusCode != 0 {
 		return nil, libsqlError(fmt.Sprintf("failed to open database %s %s", dbPath, primaryUrl), statusCode, errMsg)
 	}
