@@ -1,0 +1,52 @@
+name: Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      libsql-server-release:
+        description: 'LibSQL Server Release'
+        required: true
+        default: 'libsql-server-v0.24.32'
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        go-version: [ '1.24' ]
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ${{ matrix.go-version }}
+
+      - name: Install sqld
+        run: |
+          curl --proto '=https' --tlsv1.2 -LsSf https://github.com/tursodatabase/libsql/releases/download/${{ github.event.inputs.libsql-server-release || 'libsql-server-v0.24.32' }}/libsql-server-installer.sh | sh
+          echo "$HOME/.sqld/bin" >> $GITHUB_PATH
+          sqld --version
+
+      - name: Start sqld server
+        run: |
+          sqld &
+          while ! curl -s http://localhost:8080/health > /dev/null; do
+            echo "Waiting for sqld..."
+            sleep 1
+          done
+          echo "sqld is ready!"
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Test
+        env:
+          LIBSQL_PRIMARY_URL: "http://localhost:8080"
+          LIBSQL_AUTH_TOKEN: ""
+        run: go test -v ./...
