@@ -50,7 +50,7 @@ jobs:
             macOS)     OS_SLUG=macos-x86 ;;
           esac
           curl -sL -o sqlean-${OS_SLUG}.zip \
-            https://github.com/nalgeon/sqlean/releases/download/${SQLEAN_VERSION}/sqlean-${OS_SLUG}.zipecho "$PWD/bin" >> $GITHUB_PATH
+            https://github.com/nalgeon/sqlean/releases/download/${SQLEAN_VERSION}/sqlean-${OS_SLUG}.zip
           unzip -q sqlean-${OS_SLUG}.zip -d .
           echo "$PWD" >> $GITHUB_PATH
 
