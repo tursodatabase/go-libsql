@@ -1385,7 +1385,7 @@ func TestLoadExtension_Existing(t *testing.T) {
     }
     defer sqlConn.Close()
 
-    err = sqlConn.Raw(func(driverConn interface{}) error {
+    err = sqlConn.Raw(func(driverConn any) error {
         cImpl, ok := driverConn.(*conn)
         if !ok {
             return fmt.Errorf("unexpected driverConn type %T", driverConn)
@@ -1412,7 +1412,7 @@ func TestLoadExtension_Nonexistent(t *testing.T) {
     }
     defer sqlConn.Close()
 
-    err = sqlConn.Raw(func(driverConn interface{}) error {
+    err = sqlConn.Raw(func(driverConn any) error {
         cImpl, ok := driverConn.(*conn)
         if !ok {
             return fmt.Errorf("unexpected driverConn type %T", driverConn)
