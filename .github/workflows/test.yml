@@ -46,12 +46,13 @@ jobs:
         run: |
           SQLEAN_VERSION=0.27.2
           case "${{ runner.os }}" in
-            Linux)     OS_SLUG=linux-amd64 ;;
-            macOS)     OS_SLUG=darwin-amd64 ;;
+            Linux)     OS_SLUG=linux-x86 ;;
+            macOS)     OS_SLUG=macos-x86 ;;
           esac
-          curl -sL https://github.com/nalgeon/sqlean/releases/download/${SQLEAN_VERSION}/sqlean-${OS_SLUG}.tar.gz | tar xz
-          echo "$PWD/bin" >> $GITHUB_PATH
-          sqlean --version
+          curl -sL -o sqlean-${OS_SLUG}.zip \
+            https://github.com/nalgeon/sqlean/releases/download/${SQLEAN_VERSION}/sqlean-${OS_SLUG}.zipecho "$PWD/bin" >> $GITHUB_PATH
+          unzip -q sqlean-${OS_SLUG}.zip -d .
+          echo "$PWD" >> $GITHUB_PATH
 
       - name: Set extension env
         run: |
