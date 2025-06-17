@@ -424,20 +424,6 @@ type conn struct {
 	nativePtr C.libsql_connection_t
 }
 
-type extension struct {
-	Library string
-	Entry string
-}
-
-func (c *conn) loadExtensions(exts []extension) error {
-    for _, ext := range exts {
-        if err := c.loadExtension(ext.Library, ext.Entry); err != nil {
-            return err
-        }
-    }
-    return nil
-}
-
 func (c *conn) LoadExtension(lib string, entry string) error {
 	if err := c.loadExtension(lib, entry); err != nil {
 		return err
