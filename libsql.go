@@ -41,10 +41,11 @@ func init() {
 }
 
 type config struct {
-	authToken      *string
-	readYourWrites *bool
-	encryptionKey  *string
-	syncInterval   *time.Duration
+	authToken          *string
+	readYourWrites     *bool
+	encryptionKey      *string
+	remoteEncrytionKey *string
+	syncInterval       *time.Duration
 }
 
 type Option interface {
@@ -98,6 +99,19 @@ func WithEncryption(key string) Option {
 	})
 }
 
+func WithRemoteEncryption(key string) Option {
+	return option(func(o *config) error {
+		if o.remoteEncrytionKey != nil {
+			return fmt.Errorf("encryption key already set")
+		}
+		if key == "" {
+			return fmt.Errorf("encryption key must not be empty")
+		}
+		o.encryptionKey = &key
+		return nil
+	})
+}
+
 func WithSyncInterval(interval time.Duration) Option {
 	return option(func(o *config) error {
 		if o.syncInterval != nil {
@@ -131,11 +145,15 @@ func NewEmbeddedReplicaConnector(dbPath string, primaryUrl string, opts ...Optio
 	if config.encryptionKey != nil {
 		encryptionKey = *config.encryptionKey
 	}
+	remoteEncrytionKey := ""
+	if config.remoteEncrytionKey != nil {
+		encryptionKey = *config.encryptionKey
+	}
 	syncInterval := time.Duration(0)
 	if config.syncInterval != nil {
 		syncInterval = *config.syncInterval
 	}
-	return openSyncConnector(dbPath, primaryUrl, authToken, readYourWrites, encryptionKey, syncInterval, false)
+	return openSyncConnector(dbPath, primaryUrl, authToken, readYourWrites, encryptionKey, remoteEncrytionKey, syncInterval, false)
 }
 
 func NewSyncedDatabaseConnector(dbPath string, primaryUrl string, opts ...Option) (*Connector, error) {
@@ -161,11 +179,15 @@ func NewSyncedDatabaseConnector(dbPath string, primaryUrl string, opts ...Option
 	if config.encryptionKey != nil {
 		encryptionKey = *config.encryptionKey
 	}
+	remoteEncrytionKey := ""
+	if config.remoteEncrytionKey != nil {
+		encryptionKey = *config.encryptionKey
+	}
 	syncInterval := time.Duration(0)
 	if config.syncInterval != nil {
 		syncInterval = *config.syncInterval
 	}
-	return openSyncConnector(dbPath, primaryUrl, authToken, readYourWrites, encryptionKey, syncInterval, true)
+	return openSyncConnector(dbPath, primaryUrl, authToken, readYourWrites, encryptionKey, remoteEncrytionKey, syncInterval, true)
 }
 
 type driver struct{}
@@ -228,10 +250,10 @@ func openRemoteConnector(primaryUrl, authToken string) (*Connector, error) {
 	return &Connector{nativeDbPtr: nativeDbPtr}, nil
 }
 
-func openSyncConnector(dbPath, primaryUrl, authToken string, readYourWrites bool, encryptionKey string, syncInterval time.Duration, offline bool) (*Connector, error) {
+func openSyncConnector(dbPath, primaryUrl, authToken string, readYourWrites bool, encryptionKey string, remoteEncrytionKey string, syncInterval time.Duration, offline bool) (*Connector, error) {
 	var closeCh chan struct{}
 	var closeAckCh chan struct{}
-	nativeDbPtr, err := libsqlOpenWithSync(dbPath, primaryUrl, authToken, readYourWrites, encryptionKey, offline)
+	nativeDbPtr, err := libsqlOpenWithSync(dbPath, primaryUrl, authToken, readYourWrites, encryptionKey, remoteEncrytionKey, offline)
 	if err != nil {
 		return nil, err
 	}
@@ -339,7 +361,7 @@ func libsqlOpenRemote(url, authToken string) (C.libsql_database_t, error) {
 	return db, nil
 }
 
-func libsqlOpenWithSync(dbPath, primaryUrl, authToken string, readYourWrites bool, encryptionKey string, offline bool) (C.libsql_database_t, error) {
+func libsqlOpenWithSync(dbPath, primaryUrl, authToken string, readYourWrites bool, encryptionKey string, remoteEncrytionKey string, offline bool) (C.libsql_database_t, error) {
 	dbPathNativeString := C.CString(dbPath)
 	defer C.free(unsafe.Pointer(dbPathNativeString))
 	primaryUrlNativeString := C.CString(primaryUrl)
@@ -363,13 +385,20 @@ func libsqlOpenWithSync(dbPath, primaryUrl, authToken string, readYourWrites boo
 		defer C.free(unsafe.Pointer(encrytionKeyNativeString))
 	}
 
+	var remoteEncrytionKeyNativeString *C.char
+	if remoteEncrytionKey != "" {
+		encrytionKeyNativeString = C.CString(encryptionKey)
+		defer C.free(unsafe.Pointer(encrytionKeyNativeString))
+	}
+
 	config := C.libsql_config{
-		db_path:          dbPathNativeString,
-		auth_token:       authTokenNativeString,
-		primary_url:      primaryUrlNativeString,
-		read_your_writes: readYourWritesNative,
-		encryption_key:   encrytionKeyNativeString,
-		offline:          offlineNative,
+		db_path:               dbPathNativeString,
+		auth_token:            authTokenNativeString,
+		primary_url:           primaryUrlNativeString,
+		read_your_writes:      readYourWritesNative,
+		encryption_key:        encrytionKeyNativeString,
+		remote_encryption_key: remoteEncrytionKeyNativeString,
+		offline:               offlineNative,
 	}
 
 	var db C.libsql_database_t
