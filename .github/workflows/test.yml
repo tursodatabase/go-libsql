@@ -57,11 +57,11 @@ jobs:
       - name: Set extension env
         run: |
           case "${{ runner.os }}" in
-            Linux) ext=bin/sqlean.so ;;
-            macOS) ext=bin/sqlean.dylib ;;
+            Linux) ext=sqlean.so ;;
+            macOS) ext=sqlean.dylib ;;
           esac
           echo "LIBSQL_TEST_EXTENSION=$PWD/$ext" >> $GITHUB_ENV
-          echo "LIBSQL_TEST_EXTENSION_ENTRY=sqlite3_extension_init" >> $GITHUB_ENV
+          echo "LIBSQL_TEST_EXTENSION_ENTRY=sqlite3_sqlean_init" >> $GITHUB_ENV
 
       - name: Build
         run: go build -v ./...

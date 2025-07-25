@@ -425,15 +425,13 @@ type conn struct {
 }
 
 func (c *conn) LoadExtension(lib string, entry string) error {
-	if err := c.loadExtension(lib, entry); err != nil {
-		return err
-	}
-	return nil
-}
+	libCString := C.CString(lib)
+	defer C.free(unsafe.Pointer(libCString))
+	entryCString := C.CString(entry)
+	defer C.free(unsafe.Pointer(entryCString))
 
-func (c *conn) loadExtension(lib string, entry string) error {
 	var errMsg *C.char
-	statusCode := C.libsql_load_extension(c.nativePtr, C.CString(lib), C.CString(entry), nil)
+	statusCode := C.libsql_load_extension(c.nativePtr, libCString, entryCString, &errMsg)
 	if statusCode != 0 {
 		return libsqlError(fmt.Sprintf("failed to load extension %s with entry point %s", lib, entry), statusCode, errMsg)
 	}
