@@ -44,7 +44,7 @@ type config struct {
 	authToken          *string
 	readYourWrites     *bool
 	encryptionKey      *string
-	remoteEncrytionKey *string
+	remoteEncryptionKey *string
 	syncInterval       *time.Duration
 }
 
@@ -101,13 +101,13 @@ func WithEncryption(key string) Option {
 
 func WithRemoteEncryption(key string) Option {
 	return option(func(o *config) error {
-		if o.remoteEncrytionKey != nil {
-			return fmt.Errorf("encryption key already set")
+		if o.remoteEncryptionKey != nil {
+			return fmt.Errorf("remote encryption key already set")
 		}
 		if key == "" {
-			return fmt.Errorf("encryption key must not be empty")
+			return fmt.Errorf("remote encryption key must not be empty")
 		}
-		o.encryptionKey = &key
+		o.remoteEncryptionKey = &key
 		return nil
 	})
 }
@@ -145,15 +145,15 @@ func NewEmbeddedReplicaConnector(dbPath string, primaryUrl string, opts ...Optio
 	if config.encryptionKey != nil {
 		encryptionKey = *config.encryptionKey
 	}
-	remoteEncrytionKey := ""
-	if config.remoteEncrytionKey != nil {
-		encryptionKey = *config.encryptionKey
+	remoteEncryptionKey := ""
+	if config.remoteEncryptionKey != nil {
+		remoteEncryptionKey = *config.remoteEncryptionKey
 	}
 	syncInterval := time.Duration(0)
 	if config.syncInterval != nil {
 		syncInterval = *config.syncInterval
 	}
-	return openSyncConnector(dbPath, primaryUrl, authToken, readYourWrites, encryptionKey, remoteEncrytionKey, syncInterval, false)
+	return openSyncConnector(dbPath, primaryUrl, authToken, readYourWrites, encryptionKey, remoteEncryptionKey, syncInterval, false)
 }
 
 func NewSyncedDatabaseConnector(dbPath string, primaryUrl string, opts ...Option) (*Connector, error) {
@@ -179,15 +179,15 @@ func NewSyncedDatabaseConnector(dbPath string, primaryUrl string, opts ...Option
 	if config.encryptionKey != nil {
 		encryptionKey = *config.encryptionKey
 	}
-	remoteEncrytionKey := ""
-	if config.remoteEncrytionKey != nil {
-		encryptionKey = *config.encryptionKey
+	remoteEncryptionKey := ""
+	if config.remoteEncryptionKey != nil {
+		remoteEncryptionKey = *config.remoteEncryptionKey
 	}
 	syncInterval := time.Duration(0)
 	if config.syncInterval != nil {
 		syncInterval = *config.syncInterval
 	}
-	return openSyncConnector(dbPath, primaryUrl, authToken, readYourWrites, encryptionKey, remoteEncrytionKey, syncInterval, true)
+	return openSyncConnector(dbPath, primaryUrl, authToken, readYourWrites, encryptionKey, remoteEncryptionKey, syncInterval, true)
 }
 
 type driver struct{}
@@ -387,8 +387,8 @@ func libsqlOpenWithSync(dbPath, primaryUrl, authToken string, readYourWrites boo
 
 	var remoteEncrytionKeyNativeString *C.char
 	if remoteEncrytionKey != "" {
-		encrytionKeyNativeString = C.CString(encryptionKey)
-		defer C.free(unsafe.Pointer(encrytionKeyNativeString))
+		remoteEncrytionKeyNativeString = C.CString(remoteEncrytionKey)
+		defer C.free(unsafe.Pointer(remoteEncrytionKeyNativeString))
 	}
 
 	config := C.libsql_config{
