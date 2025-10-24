@@ -15,13 +15,19 @@ func run() (err error) {
 		return fmt.Errorf("TURSO_URL environment variable not set")
 	}
 	authToken := os.Getenv("TURSO_AUTH_TOKEN")
+	remoteEncryptionKey := os.Getenv("TURSO_REMOTE_ENCRYPTION_KEY")
 	dir, err := os.MkdirTemp("", "libsql-*")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(dir)
 
-	connector, err := libsql.NewEmbeddedReplicaConnector(dir+"/test.db", primaryUrl, libsql.WithAuthToken(authToken))
+	opts := []libsql.Option{libsql.WithAuthToken(authToken)}
+	if remoteEncryptionKey != "" {
+		opts = append(opts, libsql.WithRemoteEncryption(remoteEncryptionKey))
+	}
+
+	connector, err := libsql.NewEmbeddedReplicaConnector(dir+"/test.db", primaryUrl, opts...)
 	if err != nil {
 		return err
 	}
@@ -44,9 +50,14 @@ func run() (err error) {
 		}
 	}()
 
+	msg := "1. Sync with primary"
+	if remoteEncryptionKey != "" {
+		msg += " (encrypted db)"
+	}
+
 	for {
 		fmt.Println("What would you like to do?")
-		fmt.Println("1. Sync with primary")
+		fmt.Println(msg)
 		fmt.Println("2. Select from test table")
 		fmt.Println("3. Insert row to test table")
 		fmt.Println("4. Exit")
