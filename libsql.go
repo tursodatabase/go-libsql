@@ -41,11 +41,11 @@ func init() {
 }
 
 type config struct {
-	authToken          *string
-	readYourWrites     *bool
-	encryptionKey      *string
+	authToken           *string
+	readYourWrites      *bool
+	encryptionKey       *string
 	remoteEncryptionKey *string
-	syncInterval       *time.Duration
+	syncInterval        *time.Duration
 }
 
 type Option interface {
@@ -217,8 +217,9 @@ func (d driver) OpenConnector(dbAddress string) (sqldriver.Connector, error) {
 		fallthrough
 	case "libsql":
 		authToken := u.Query().Get("authToken")
+		remoteEncryptionKey := u.Query().Get("remoteEncryptionKey")
 		u.RawQuery = ""
-		return openRemoteConnector(u.String(), authToken)
+		return openRemoteConnector(u.String(), authToken, remoteEncryptionKey)
 	}
 	return nil, fmt.Errorf("unsupported URL scheme: %s\nThis driver supports only URLs that start with libsql://, file:, https:// or http://", u.Scheme)
 }
@@ -242,8 +243,8 @@ func openLocalConnector(dbPath string) (*Connector, error) {
 	return &Connector{nativeDbPtr: nativeDbPtr}, nil
 }
 
-func openRemoteConnector(primaryUrl, authToken string) (*Connector, error) {
-	nativeDbPtr, err := libsqlOpenRemote(primaryUrl, authToken)
+func openRemoteConnector(primaryUrl, authToken, remoteEncryptionKey string) (*Connector, error) {
+	nativeDbPtr, err := libsqlOpenRemote(primaryUrl, authToken, remoteEncryptionKey)
 	if err != nil {
 		return nil, err
 	}
@@ -346,15 +347,26 @@ func libsqlOpenLocal(dataSourceName string) (C.libsql_database_t, error) {
 	return db, nil
 }
 
-func libsqlOpenRemote(url, authToken string) (C.libsql_database_t, error) {
+func libsqlOpenRemote(url, authToken, remoteEncryptionKey string) (C.libsql_database_t, error) {
 	connectionString := C.CString(url)
 	defer C.free(unsafe.Pointer(connectionString))
 	authTokenNativeString := C.CString(authToken)
 	defer C.free(unsafe.Pointer(authTokenNativeString))
 
+	var remoteEncryptionKeyNativeString *C.char
+	if remoteEncryptionKey != "" {
+		remoteEncryptionKeyNativeString = C.CString(remoteEncryptionKey)
+		defer C.free(unsafe.Pointer(remoteEncryptionKeyNativeString))
+	}
+
 	var db C.libsql_database_t
 	var errMsg *C.char
-	statusCode := C.libsql_open_remote(connectionString, authTokenNativeString, &db, &errMsg)
+	var statusCode C.int
+	if remoteEncryptionKey == "" {
+		statusCode = C.libsql_open_remote(connectionString, authTokenNativeString, &db, &errMsg)
+	} else {
+		statusCode = C.libsql_open_remote_with_remote_encryption(connectionString, authTokenNativeString, remoteEncryptionKeyNativeString, &db, &errMsg)
+	}
 	if statusCode != 0 {
 		return nil, libsqlError(fmt.Sprint("failed to open remote database ", url), statusCode, errMsg)
 	}

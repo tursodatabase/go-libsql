@@ -23,9 +23,16 @@ func run() (err error) {
 		return fmt.Errorf("TURSO_URL environment variable not set")
 	}
 
+	sep := "?"
 	authToken := os.Getenv("TURSO_AUTH_TOKEN")
 	if authToken != "" {
-		dbUrl += "?authToken=" + authToken
+		dbUrl += sep + "authToken=" + authToken
+		sep = "&"
+	}
+
+	remoteEncryptionKey := os.Getenv("TURSO_REMOTE_ENCRYPTION_KEY")
+	if remoteEncryptionKey != "" {
+		dbUrl += sep + "remoteEncryptionKey=" + remoteEncryptionKey
 	}
 
 	// Open database connection
