@@ -1,3 +1,18 @@
+// Example: Connecting to an encrypted Turso Cloud database
+//
+// This example shows how to connect to a Turso Cloud database with
+// remote encryption using the go-libsql driver.
+//
+// Documentation of encrypted databases - https://docs.turso.tech/cloud/encryption
+//
+// Usage:
+//
+//	export TURSO_URL="libsql://your-db.aws-us-east-2.turso.io"
+//	export TURSO_AUTH_TOKEN="your-token"
+//	export TURSO_REMOTE_ENCRYPTION_KEY="encryption key in base 64 encoded format"
+//	go run main.go
+//
+// The encryption key must be encoded in base64 format.
 package main
 
 import (
