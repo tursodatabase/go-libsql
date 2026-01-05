@@ -123,6 +123,8 @@ jobs:
 
       - name: Build libsql for macOS
         working-directory: libsql/bindings/c
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "13.0"
         run: |
           cargo build --release
 
