@@ -436,6 +436,20 @@ type conn struct {
 	nativePtr C.libsql_connection_t
 }
 
+func (c *conn) LoadExtension(lib string, entry string) error {
+	libCString := C.CString(lib)
+	defer C.free(unsafe.Pointer(libCString))
+	entryCString := C.CString(entry)
+	defer C.free(unsafe.Pointer(entryCString))
+
+	var errMsg *C.char
+	statusCode := C.libsql_load_extension(c.nativePtr, libCString, entryCString, &errMsg)
+	if statusCode != 0 {
+		return libsqlError(fmt.Sprintf("failed to load extension %s with entry point %s", lib, entry), statusCode, errMsg)
+	}
+	return nil
+}
+
 func (c *conn) Prepare(query string) (sqldriver.Stmt, error) {
 	return c.PrepareContext(context.Background(), query)
 }

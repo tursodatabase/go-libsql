@@ -1359,3 +1359,71 @@ func TestErrorRowsNext(t *testing.T) {
 		}
 	})
 }
+
+// To run this, set LIBSQL_TEST_EXTENSION to the full path of a valid SQLite extension
+// and (optionally) LIBSQL_TEST_EXTENSION_ENTRY to its init symbol (defaults to "sqlite3_extension_init").
+func TestLoadExtension_Existing(t *testing.T) {
+    extPath := os.Getenv("LIBSQL_TEST_EXTENSION")
+    if extPath == "" {
+        t.Skip("LIBSQL_TEST_EXTENSION not set; skipping existing‐extension load test")
+    }
+    entryPoint := os.Getenv("LIBSQL_TEST_EXTENSION_ENTRY")
+    if entryPoint == "" {
+        entryPoint = "sqlite3_extension_init"
+    }
+
+    db, err := sql.Open("libsql", ":memory:")
+    if err != nil {
+        t.Fatal(err)
+    }
+    defer db.Close()
+
+    ctx := context.Background()
+    sqlConn, err := db.Conn(ctx)
+    if err != nil {
+        t.Fatal(err)
+    }
+    defer sqlConn.Close()
+
+    err = sqlConn.Raw(func(driverConn any) error {
+        cImpl, ok := driverConn.(*conn)
+        if !ok {
+            return fmt.Errorf("unexpected driverConn type %T", driverConn)
+        }
+        return cImpl.LoadExtension(extPath, entryPoint)
+    })
+
+    if err != nil {
+        t.Fatalf("failed to load existing extension %q (entry %q): %v", extPath, entryPoint, err)
+    }
+}
+
+func TestLoadExtension_Nonexistent(t *testing.T) {
+    db, err := sql.Open("libsql", ":memory:")
+    if err != nil {
+        t.Fatal(err)
+    }
+    defer db.Close()
+
+    ctx := context.Background()
+    sqlConn, err := db.Conn(ctx)
+    if err != nil {
+        t.Fatal(err)
+    }
+    defer sqlConn.Close()
+
+    err = sqlConn.Raw(func(driverConn any) error {
+        cImpl, ok := driverConn.(*conn)
+        if !ok {
+            return fmt.Errorf("unexpected driverConn type %T", driverConn)
+        }
+        return cImpl.LoadExtension("nonexistent_extension.so", "entry_point")
+    })
+
+    if err == nil {
+        t.Fatal("expected error loading nonexistent extension, got nil")
+    }
+    if !strings.Contains(err.Error(), "failed to load extension") {
+        t.Fatalf("unexpected error loading extension: %v", err)
+    }
+}
