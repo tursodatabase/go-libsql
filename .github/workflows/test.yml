@@ -42,6 +42,27 @@ jobs:
           done
           echo "sqld is ready!"
 
+      - name: Install sqlean
+        run: |
+          SQLEAN_VERSION=0.27.2
+          case "${{ runner.os }}" in
+            Linux)     OS_SLUG=linux-x86 ;;
+            macOS)     OS_SLUG=macos-x86 ;;
+          esac
+          curl -sL -o sqlean-${OS_SLUG}.zip \
+            https://github.com/nalgeon/sqlean/releases/download/${SQLEAN_VERSION}/sqlean-${OS_SLUG}.zip
+          unzip -q sqlean-${OS_SLUG}.zip -d .
+          echo "$PWD" >> $GITHUB_PATH
+
+      - name: Set extension env
+        run: |
+          case "${{ runner.os }}" in
+            Linux) ext=sqlean.so ;;
+            macOS) ext=sqlean.dylib ;;
+          esac
+          echo "LIBSQL_TEST_EXTENSION=$PWD/$ext" >> $GITHUB_ENV
+          echo "LIBSQL_TEST_EXTENSION_ENTRY=sqlite3_sqlean_init" >> $GITHUB_ENV
+
       - name: Build
         run: go build -v ./...
 
