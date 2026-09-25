@@ -1187,6 +1187,47 @@ func TestErrorCanNotConnect(t *testing.T) {
 	}
 }
 
+func TestLoadExtension(t *testing.T) {
+	db, err := sql.Open("libsql", "file:"+t.TempDir()+"/test.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+
+	err = conn.Raw(func(driverConn any) error {
+		loader, ok := driverConn.(interface{ LoadExtension(string, string) error })
+		if !ok {
+			t.Fatal("driver connection does not support extension loading")
+		}
+		if err := loader.LoadExtension("/nonexistent/libsql-test-extension", ""); err == nil {
+			t.Fatal("expected a load error for a missing extension")
+		}
+		if path := os.Getenv("LIBSQL_TEST_EXTENSION_PATH"); path != "" {
+			return loader.LoadExtension(path, "")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if os.Getenv("LIBSQL_TEST_EXTENSION_PATH") != "" {
+		var nanos int64
+		if err := conn.QueryRowContext(context.Background(), "SELECT time_get_nano(time_now())").Scan(&nanos); err != nil {
+			t.Fatal(err)
+		}
+		if nanos <= 0 {
+			t.Fatalf("unexpected nanosecond timestamp %d", nanos)
+		}
+	}
+}
+
 func TestExec(t *testing.T) {
 	runMemoryAndFileTests(t, func(t *testing.T, db *sql.DB) {
 		if _, err := db.ExecContext(context.Background(), "CREATE TABLE test (id INTEGER, name TEXT)"); err != nil {

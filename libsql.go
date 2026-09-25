@@ -437,6 +437,26 @@ type conn struct {
 	nativePtr C.libsql_connection_t
 }
 
+// LoadExtension loads a SQLite extension on this connection. Call it through
+// sql.Conn.Raw for each connection in a database/sql pool.
+func (c *conn) LoadExtension(path, entryPoint string) error {
+	pathCString := C.CString(path)
+	defer C.free(unsafe.Pointer(pathCString))
+
+	var entryPointCString *C.char
+	if entryPoint != "" {
+		entryPointCString = C.CString(entryPoint)
+		defer C.free(unsafe.Pointer(entryPointCString))
+	}
+
+	var errMsg *C.char
+	statusCode := C.libsql_load_extension(c.nativePtr, pathCString, entryPointCString, &errMsg)
+	if statusCode != 0 {
+		return libsqlError("failed to load extension", statusCode, errMsg)
+	}
+	return nil
+}
+
 func (c *conn) Prepare(query string) (sqldriver.Stmt, error) {
 	return c.PrepareContext(context.Background(), query)
 }
